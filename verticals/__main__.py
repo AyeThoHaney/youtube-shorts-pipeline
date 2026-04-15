@@ -1,7 +1,6 @@
 """CLI entry point — python -m verticals."""
 
 import argparse
-import asyncio
 import sys
 import time
 from pathlib import Path
@@ -162,7 +161,8 @@ async def _async_produce(args):
 
 
 def cmd_produce(args):
-    return asyncio.run(_async_produce(args))
+    from .async_helpers import run_async
+    return run_async(_async_produce(args), timeout=600)
 
 
 def cmd_upload(args):

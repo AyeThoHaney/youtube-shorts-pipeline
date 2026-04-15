@@ -15,6 +15,7 @@ assemble runs last.
 from __future__ import annotations
 
 import asyncio
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Callable
@@ -85,6 +86,10 @@ class AsyncStageRunner:
     dispatched to a ThreadPoolExecutor so the event loop stays unblocked while
     stages run in parallel.
 
+    Thread safety: a Lock serializes all PipelineState mutations so that
+    concurrent stages (e.g. broll + voiceover) cannot corrupt the shared
+    draft dict.
+
     Usage::
 
         runner = AsyncStageRunner(state, force=force)
@@ -102,6 +107,7 @@ class AsyncStageRunner:
         self._state = state
         self._force = force
         self._executor = ThreadPoolExecutor(max_workers=max_workers)
+        self._state_lock = threading.Lock()  # serializes all state mutations
 
     def _load_cached(self, stage_name: str, artifact_key: str, deserialize):
         log(f"Skipping {stage_name} (already done)")
@@ -123,7 +129,8 @@ class AsyncStageRunner:
             stored = {artifact_key: [str(v) for v in result]}
         else:
             stored = {artifact_key: str(result) if result is not None else ""}
-        self._state.complete_stage(stage_name, stored)
+        with self._state_lock:
+            self._state.complete_stage(stage_name, stored)
         return result
 
     async def stage(
@@ -148,8 +155,17 @@ class AsyncStageRunner:
 
     @staticmethod
     async def gather(*coros) -> tuple:
-        """Run coroutines concurrently and return results as a tuple."""
-        return tuple(await asyncio.gather(*coros))
+        """Run coroutines concurrently; re-raise the first exception after all settle.
+
+        Uses return_exceptions=True so a failing stage does not silently cancel
+        its sibling.  Any exceptions collected are re-raised after all coroutines
+        have completed.
+        """
+        results = await asyncio.gather(*coros, return_exceptions=True)
+        errors = [r for r in results if isinstance(r, BaseException)]
+        if errors:
+            raise errors[0]
+        return tuple(results)
 
     def shutdown(self):
-        self._executor.shutdown(wait=False)
+        self._executor.shutdown(wait=True)
