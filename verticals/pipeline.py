@@ -1,6 +1,23 @@
-"""StageRunner — encapsulates the run-or-load-cache pattern for pipeline stages."""
+"""Pipeline orchestration — StageRunner (sync) and AsyncStageRunner (parallel).
+
+Execution graph for produce:
+
+    draft
+      ├── broll  ─────────────────────────────────────────┐
+      └── voiceover ──┬── captions ──┐                    │
+                      └── music ─────┴──── assemble ──────┘
+
+broll and voiceover run concurrently (both depend only on draft).
+captions and music run concurrently after voiceover completes.
+assemble runs last.
+"""
 
 from __future__ import annotations
+
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+from typing import Any, Callable
 
 from .log import log
 from .state import PipelineState
@@ -50,11 +67,8 @@ class StageRunner:
             return result
 
         log(f"Skipping {stage_name} (already done)")
-        # For dict-typed stages return the full artifacts dict; otherwise
-        # return the single keyed value (with optional deserialization).
         artifacts = self._state.state.get(stage_name, {}).get("artifacts", {})
         if artifact_key not in artifacts and artifacts:
-            # Dict stage — return whole artifacts dict
             return dict(artifacts)
         stored = artifacts.get(artifact_key)
         if deserialize is not None:
@@ -62,3 +76,80 @@ class StageRunner:
                 return [deserialize(v) for v in stored]
             return deserialize(stored)
         return stored
+
+
+class AsyncStageRunner:
+    """Async-aware stage runner that runs independent stages concurrently.
+
+    All stage functions are synchronous (subprocess/network I/O).  They are
+    dispatched to a ThreadPoolExecutor so the event loop stays unblocked while
+    stages run in parallel.
+
+    Usage::
+
+        runner = AsyncStageRunner(state, force=force)
+        frames, vo_path = await runner.gather(
+            runner.stage("broll", broll_fn, "frames", deserialize=Path),
+            runner.stage("voiceover", tts_fn, "path", deserialize=Path),
+        )
+        captions_result, music_result = await runner.gather(
+            runner.stage("captions", captions_fn, "srt_path"),
+            runner.stage("music", music_fn, "track_path"),
+        )
+    """
+
+    def __init__(self, state: PipelineState, force: bool = False, max_workers: int = 4):
+        self._state = state
+        self._force = force
+        self._executor = ThreadPoolExecutor(max_workers=max_workers)
+
+    def _load_cached(self, stage_name: str, artifact_key: str, deserialize):
+        log(f"Skipping {stage_name} (already done)")
+        artifacts = self._state.state.get(stage_name, {}).get("artifacts", {})
+        if artifact_key not in artifacts and artifacts:
+            return dict(artifacts)
+        stored = artifacts.get(artifact_key)
+        if deserialize is not None:
+            if isinstance(stored, list):
+                return [deserialize(v) for v in stored]
+            return deserialize(stored)
+        return stored
+
+    def _run_and_store(self, stage_name: str, executor_fn: Callable, artifact_key: str) -> Any:
+        result = executor_fn()
+        if isinstance(result, dict):
+            stored = {k: str(v) if v is not None else "" for k, v in result.items()}
+        elif isinstance(result, list):
+            stored = {artifact_key: [str(v) for v in result]}
+        else:
+            stored = {artifact_key: str(result) if result is not None else ""}
+        self._state.complete_stage(stage_name, stored)
+        return result
+
+    async def stage(
+        self,
+        stage_name: str,
+        executor_fn: Callable,
+        artifact_key: str,
+        deserialize: Callable | None = None,
+    ) -> Any:
+        """Coroutine for a single stage — cached or dispatched to thread pool."""
+        if not self._force and self._state.is_done(stage_name):
+            return self._load_cached(stage_name, artifact_key, deserialize)
+
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            self._executor,
+            lambda: self._run_and_store(stage_name, executor_fn, artifact_key),
+        )
+        if deserialize is not None and not isinstance(result, (dict, list)):
+            return deserialize(result) if result else result
+        return result
+
+    @staticmethod
+    async def gather(*coros) -> tuple:
+        """Run coroutines concurrently and return results as a tuple."""
+        return tuple(await asyncio.gather(*coros))
+
+    def shutdown(self):
+        self._executor.shutdown(wait=False)

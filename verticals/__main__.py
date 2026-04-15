@@ -1,6 +1,7 @@
 """CLI entry point — python -m verticals."""
 
 import argparse
+import asyncio
 import sys
 import time
 from pathlib import Path
@@ -48,14 +49,15 @@ def cmd_draft(args):
     return out_path
 
 
-def cmd_produce(args):
+async def _async_produce(args):
+    """Async core of cmd_produce — runs broll+voiceover in parallel, then captions+music in parallel."""
     from .broll import generate_broll
     from .tts import generate_voiceover
     from .captions import generate_captions
     from .music import select_and_prepare_music
     from .assemble import assemble_video
     from .niche import load_niche, get_voice_config, get_caption_config, get_music_config
-    from .pipeline import StageRunner
+    from .pipeline import AsyncStageRunner
     from .state import PipelineState
     import json
     import shutil
@@ -80,59 +82,71 @@ def cmd_produce(args):
     )
     print(f"\n  Producing {lang.upper()} video for job {job_id} [niche: {niche_name}]")
 
-    runner = StageRunner(state, force=force)
-
-    frames = runner.run(
-        "broll",
-        lambda: generate_broll(
-            draft.get("broll_prompts", ["Cinematic landscape"] * 3),
-            work_dir, topic=draft.get("topic", ""), niche=niche_name,
-        ),
-        "frames",
-        deserialize=_Path,
-    )
-
     voice_config = get_voice_config(profile, provider=tts_provider or "edge_tts", lang=lang)
-    vo_path = runner.run(
-        "voiceover",
-        lambda: generate_voiceover(script, work_dir, lang, provider=tts_provider, voice_config=voice_config),
-        "path",
-        deserialize=_Path,
-    )
-
     caption_config = get_caption_config(profile)
-    captions_result = runner.run(
-        "captions",
-        lambda: generate_captions(
-            vo_path, work_dir, lang,
-            highlight_color=caption_config.get("highlight_color", "#FFFF00"),
-            words_per_group=caption_config.get("words_per_group", 4),
-        ),
-        "srt_path",
-    ) or {}
-
     music_config = get_music_config(profile)
-    music_result = runner.run(
-        "music",
-        lambda: select_and_prepare_music(
-            vo_path, work_dir,
-            duck_speech=music_config.get("duck_volume_speech"),
-            duck_gap=music_config.get("duck_volume_gap"),
-        ),
-        "track_path",
-    ) or {}
 
-    video_path = runner.run(
-        "assemble",
-        lambda: assemble_video(
-            frames=frames, voiceover=vo_path, out_dir=work_dir, job_id=job_id, lang=lang,
-            ass_path=captions_result.get("ass_path"),
-            music_path=music_result.get("track_path"),
-            duck_filter=music_result.get("duck_filter"),
-        ),
-        "video_path",
-        deserialize=_Path,
-    )
+    runner = AsyncStageRunner(state, force=force)
+    try:
+        # Stage 1 — broll and voiceover are independent: run concurrently.
+        frames, vo_path = await runner.gather(
+            runner.stage(
+                "broll",
+                lambda: generate_broll(
+                    draft.get("broll_prompts", ["Cinematic landscape"] * 3),
+                    work_dir, topic=draft.get("topic", ""), niche=niche_name,
+                ),
+                "frames",
+                deserialize=_Path,
+            ),
+            runner.stage(
+                "voiceover",
+                lambda: generate_voiceover(
+                    script, work_dir, lang, provider=tts_provider, voice_config=voice_config
+                ),
+                "path",
+                deserialize=_Path,
+            ),
+        )
+
+        # Stage 2 — captions and music both need voiceover: run concurrently.
+        captions_result, music_result = await runner.gather(
+            runner.stage(
+                "captions",
+                lambda: generate_captions(
+                    vo_path, work_dir, lang,
+                    highlight_color=caption_config.get("highlight_color", "#FFFF00"),
+                    words_per_group=caption_config.get("words_per_group", 4),
+                ),
+                "srt_path",
+            ),
+            runner.stage(
+                "music",
+                lambda: select_and_prepare_music(
+                    vo_path, work_dir,
+                    duck_speech=music_config.get("duck_volume_speech"),
+                    duck_gap=music_config.get("duck_volume_gap"),
+                ),
+                "track_path",
+            ),
+        )
+        captions_result = captions_result or {}
+        music_result = music_result or {}
+
+        # Stage 3 — assemble: needs everything above.
+        video_path = await runner.stage(
+            "assemble",
+            lambda: assemble_video(
+                frames=frames, voiceover=vo_path, out_dir=work_dir, job_id=job_id, lang=lang,
+                ass_path=captions_result.get("ass_path"),
+                music_path=music_result.get("track_path"),
+                duck_filter=music_result.get("duck_filter"),
+            ),
+            "video_path",
+            deserialize=_Path,
+        )
+    finally:
+        runner.shutdown()
 
     srt_path = captions_result.get("srt_path")
     if srt_path and Path(srt_path).exists():
@@ -145,6 +159,10 @@ def cmd_produce(args):
 
     print(f"\n  Video: {video_path}")
     return video_path
+
+
+def cmd_produce(args):
+    return asyncio.run(_async_produce(args))
 
 
 def cmd_upload(args):

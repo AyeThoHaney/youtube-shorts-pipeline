@@ -2,6 +2,7 @@
 
 import base64
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import requests
@@ -210,11 +211,11 @@ def generate_broll(prompts: list, out_dir: Path, topic: str = "", niche: str = "
         img.save(out_path)
         return out_path
 
-    for i, prompt in enumerate(prompts[:3]):
+    def _fetch_frame(i: int, prompt: str) -> tuple[int, Path]:
         out_path = out_dir / f"broll_{i}.png"
         log(f"Generating b-roll frame {i+1}/3...")
 
-        def _try_custom(i=i, out_path=out_path):
+        def _try_custom():
             if not (topic and niche):
                 raise RuntimeError("no topic/niche for custom footage")
             log(f"Searching custom footage for '{topic}' in {niche}...")
@@ -222,7 +223,7 @@ def generate_broll(prompts: list, out_dir: Path, topic: str = "", niche: str = "
                 return out_path
             raise RuntimeError("custom footage not found")
 
-        def _try_pexels(i=i, out_path=out_path):
+        def _try_pexels():
             if not (topic and niche):
                 raise RuntimeError("no topic/niche for Pexels")
             if _get_pexels_frame(topic, niche, out_path, i):
@@ -232,14 +233,25 @@ def generate_broll(prompts: list, out_dir: Path, topic: str = "", niche: str = "
         frame = (
             FallbackChain(f"broll_{i}")
             .add("custom", _try_custom)
-            .add("gemini", lambda p=prompt, o=out_path: _gemini_and_resize(p, o))
+            .add("gemini", lambda: _gemini_and_resize(prompt, out_path))
             .add("pexels", _try_pexels)
-            .add("solid_color", lambda i=i: _fallback_frame(i, out_dir))
+            .add("solid_color", lambda: _fallback_frame(i, out_dir))
             .execute()
         )
-        frames.append(frame)
+        return i, frame
 
-    return frames
+    # Fetch all frames in parallel — each is an independent network call.
+    results: dict[int, Path] = {}
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        futures = {
+            pool.submit(_fetch_frame, i, prompt): i
+            for i, prompt in enumerate(prompts[:3])
+        }
+        for future in as_completed(futures):
+            idx, frame = future.result()
+            results[idx] = frame
+
+    return [results[i] for i in sorted(results)]
 
 
 def animate_frame(img_path: Path, out_path: Path, duration: float, effect: str = "zoom_in"):
