@@ -1,59 +1,153 @@
 name: ai
-display_name: "AI & Machine Learning (v2.0)"
-description: "AI breakthroughs, AI failures, machine learning insights, future concerns."
-
-llm:
-  model: qwen3:8b
-  provider: ollama
-  temperature: 0.85
+display_name: "AI, Tech & Agents — All Angles"
+description: "Breaking AI news, hidden builder tools, dev workflows, AI vs human experiments, agent automation, developer war stories."
 
 voice:
-  engine: kokoro
-  speaker: af_heart
-  speed: 1.0
-
-quality_gates:
-  min_upvotes: 600
-  min_comments: 40
-  hook_score_threshold: 0.87
-
-visuals:
-  fallback: pexels
-  premium_threshold: 0.91
+  engine: elevenlabs
+  stability: 0.80
+  clarity: 0.92
+  style: 0.45
 
 script:
-  tone: "informative, slightly futuristic, balanced optimism and skepticism, compelling"
-  pacing: "moderate with dramatic pauses for big reveals, builds tension"
-  word_count: "160 to 185"
+  tone: "punchy, direct, slightly provocative — sounds like a builder talking to builders, not a news anchor"
+  pacing: "fast opening, slow down on the key reveal, fast close — never dead air"
+  word_count: "140 to 175"
+
+  never_use:
+    - "In conclusion"
+    - "It's worth noting"
+    - "As we can see"
+    - "Interestingly enough"
+    - "In today's rapidly evolving landscape"
+    - "Game changer"
+    - "Revolutionary"
+    - "Groundbreaking"
+
+  # 6 content angles — pick based on research material
+  angles:
+    breaking_news:
+      description: "Something just happened in AI. Fast, urgent, timely."
+      tone: "urgent but calm — insider telling you first"
+    builder_tools:
+      description: "Specific tool or repo that solves a real problem."
+      tone: "practical, show-don't-tell, specific outcomes"
+    ai_vs_human:
+      description: "AI did something a human would do. Experiment, test, comparison."
+      tone: "curious, experimental, honest about results"
+    hidden_gems:
+      description: "Repo, tool, or technique most people haven't seen yet."
+      tone: "excited but credible — you found something real"
+    agent_automation:
+      description: "AI agents automating real workflows. What got replaced, how, at what cost."
+      tone: "pragmatic builder — costs, tradeoffs, what broke first"
+    dev_war_story:
+      description: "A developer built something, hit a wall, fixed it. Real debugging, real outcomes."
+      tone: "candid, slightly self-deprecating, always ends with the lesson"
 
   hooks:
-    - id: ai_breakthrough
-      template: "AI just {achievement}. And it's {implication}."
-      when: "AI capability breakthrough or new milestone"
-    - id: ai_failure
-      template: "This AI company's {product} just {disaster}."
-      when: "AI failure, limitation, or ethical issue"
-    - id: job_impact
-      template: "{profession} are about to {change}. Here's why."
-      when: "AI threatening or changing job categories"
-    - id: ethical_question
-      template: "If AI can {capability}, what happens to {concern}?"
-      when: "ethical or societal implications"
-    - id: technical_marvel
-      template: "This AI technique is {adjective}. Scientists finally figured out {insight}."
-      when: "technical innovation or research breakthrough"
+    # Breaking news angle
+    - id: just_dropped
+      template: "{Company} just {action}. Here's what actually changed."
+      when: "product launch, model release, policy update"
+    - id: nobody_noticed
+      template: "Everyone missed the most important part of {event}."
+      when: "big news with an overlooked detail"
+    # Builder tools angle
+    - id: replaced_software
+      template: "This free tool replaced {expensive_thing} for me."
+      when: "open source tool with clear ROI"
+    - id: one_command
+      template: "One {tool} command that saved me {time/money}."
+      when: "specific workflow automation"
+    - id: stars_nobody_knows
+      template: "{N}k stars on GitHub and almost nobody's using this."
+      when: "underrated high-star repo"
+    # AI vs human angle
+    - id: let_ai_run
+      template: "I let AI {task} for {timeframe}. Here's what happened."
+      when: "experiment or comparison"
+    - id: ai_beat_me
+      template: "AI just beat me at {task}. I tested it {N} times."
+      when: "AI outperforming a human benchmark"
+    # Hidden gems angle
+    - id: local_free
+      template: "Run {capability} locally. Free. No API key. {N}MB."
+      when: "local/offline AI tool"
+    - id: open_source_secret
+      template: "The open source version of {paid_tool} nobody talks about."
+      when: "free alternative to paid tool"
+
+  hooks:
+    # Agent automation angle
+    - id: replaced_workflow
+      template: "I automated {task} with one agent. Here's the exact setup."
+      when: "agent pipeline or workflow automation"
+    - id: agent_cost
+      template: "This agent runs {task} 24/7. Cost: {price}/day."
+      when: "autonomous agent with low running cost"
+    # Dev war story angle
+    - id: broke_then_fixed
+      template: "My {system} broke at 3am. Here's what I found in the logs."
+      when: "debugging story with a clear lesson"
+    - id: rewrote_it
+      template: "I rewrote {thing} from scratch. Took {time}. Here's why it was worth it."
+      when: "refactor or rebuild with measurable outcome"
 
   cta_variants:
-    - "Are you worried about AI? Let's discuss in the comments."
-    - "What AI breakthrough surprised you most?"
-    - "Subscribe for cutting-edge AI news."
-    - "Where do you think AI is headed?"
+    - "Follow — I post what actually works, not what's trending."
+    - "Drop your stack in the comments."
+    - "Save this — you'll need it."
+    - "What tool changed your workflow? Comments."
+    - "Follow for more hidden gems."
+    - "What would you automate first? Comments."
+
+visuals:
+  style: "tech-aesthetic — dark backgrounds, code terminals, UI screenshots, bold metrics"
+  mood: "sharp, modern, slightly cinematic — not stock photo"
+  subjects:
+    prefer:
+      - "dark terminal with glowing code or text"
+      - "clean dark UI dashboard with metrics"
+      - "split screen before vs after comparison"
+      - "GitHub repo page with star count highlighted"
+      - "bold white text on dark background with a single accent color"
+      - "abstract neural network with sharp geometric lines, dark bg"
+      - "close-up of phone or monitor showing AI output"
+      - "person at desk with multiple screens, dark room, code on screen"
+    avoid:
+      - "generic stock photo"
+      - "cheesy robot hands"
+      - "blue gradient brain"
+      - "handshake"
+      - "lightbulb"
+      - "business people in suits"
+  prompt_suffix: "dark cinematic tech aesthetic, 9:16 vertical, sharp focus, no text in image, photorealistic"
 
 discovery:
-  pexels:
-    search_query: "artificial intelligence neural network robot machine learning"
-    min_limit: 3
   reddit:
     subreddits:
-      ["MachineLearning", "artificial", "ArtificialIntelligence", "ChatGPT"]
-    min_score: 400
+      - "MachineLearning"
+      - "artificial"
+      - "LocalLLaMA"
+      - "ClaudeAI"
+      - "ChatGPT"
+      - "singularity"
+      - "programming"
+      - "SideProject"
+    min_score: 300
+  vault:
+    enabled: true
+    path: "~/The Codex Brain/wiki/pages"
+    patterns:
+      - "intel-github-*"
+      - "analysis-*"
+      - "Claude*"
+      - "GPT*"
+      - "Best Local LLMs*"
+      - "ArcReel*"
+      - "agent-squad*"
+      - "herdr*"
+      - "TokenEater*"
+      - "biomcp*"
+      - "openagents*"
+      - "CheetahClaws*"

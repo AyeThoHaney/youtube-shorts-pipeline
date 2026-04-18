@@ -85,7 +85,7 @@ def select_and_prepare_music(
     """
     tracks = _find_tracks()
     if not tracks:
-        log("No music tracks found in music/ — skipping background music")
+        log("[DEGRADED] No music tracks found in music/ — video will have no background audio. Add MP3s to youtube-shorts-pipeline/music/")
         return {}
 
     track = random.choice(tracks)

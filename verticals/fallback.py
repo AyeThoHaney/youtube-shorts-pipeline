@@ -19,8 +19,16 @@ class FallbackChain:
         )
     """
 
-    def __init__(self, name: str):
+    def __init__(self, name: str, degraded_after: int = 0):
+        """
+        Args:
+            name: Label for log messages.
+            degraded_after: Number of providers considered "primary". If the
+                chain succeeds only after skipping this many, a [DEGRADED]
+                warning is emitted. Default 0 = warn on any fallback past first.
+        """
         self._name = name
+        self._degraded_after = degraded_after
         self._providers: list[tuple[str, object, object]] = []
 
     def add(self, name: str, fn, condition=None) -> "FallbackChain":
@@ -45,6 +53,7 @@ class FallbackChain:
             RuntimeError: If all providers fail.
         """
         errors: list[str] = []
+        attempt = 0
 
         for provider_name, fn, condition in self._providers:
             if condition is not None and not condition():
@@ -52,11 +61,15 @@ class FallbackChain:
                 continue
             try:
                 result = fn()
-                log(f"[{self._name}] {provider_name} succeeded")
+                if attempt > self._degraded_after:
+                    log(f"[DEGRADED] [{self._name}] using fallback provider '{provider_name}' — primary providers failed. Video quality may be reduced.")
+                else:
+                    log(f"[{self._name}] {provider_name} succeeded")
                 return result
             except Exception as exc:
                 log(f"[{self._name}] {provider_name} failed: {exc}")
                 errors.append(f"{provider_name}: {exc}")
+                attempt += 1
 
         raise RuntimeError(
             f"[{self._name}] All providers failed:\n" + "\n".join(errors)

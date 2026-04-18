@@ -1,0 +1,21 @@
+{
+  "name": "verticals-remotion",
+  "version": "1.0.0",
+  "description": "Remotion motion graphics for the Verticals YouTube Shorts pipeline",
+  "scripts": {
+    "render-intro": "npx remotion render VerticalIntro",
+    "render-caption": "npx remotion render KineticCaption",
+    "studio": "npx remotion studio"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.0",
+    "remotion": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.0.0",
+    "typescript": "^5.0.0"
+  },
+  "remotion": {
+    "entryPoint": "src/index.tsx"
+  }
+}

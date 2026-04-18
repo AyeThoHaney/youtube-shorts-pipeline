@@ -27,7 +27,7 @@ def _whisper_word_timestamps(audio_path: Path, lang: str = "en") -> list[dict]:
     try:
         import whisper
     except ImportError:
-        log("Whisper not installed — skipping word timestamps")
+        log("[DEGRADED] Whisper not installed — word-level captions unavailable. Install: pip install openai-whisper")
         return []
 
     log("Running Whisper for word-level timestamps...")
@@ -176,7 +176,7 @@ def generate_captions(
     result = {"words": words}
 
     if not words:
-        log("No word timestamps — skipping caption generation")
+        log("[DEGRADED] No word timestamps — captions will be SRT-only (no burn-in, no KineticCaption overlay). Check Whisper install and audio validity.")
         # Fallback: run whisper CLI for SRT only
         try:
             from .config import run_cmd
@@ -206,5 +206,11 @@ def generate_captions(
     ass_path = work_dir / f"captions_{lang}.ass"
     _generate_ass(words, ass_path, highlight_color=highlight_color, group_size=words_per_group)
     result["ass_path"] = str(ass_path)
+
+    # Export word timings in Remotion KineticCaption format (ms, not seconds)
+    result["remotion_words"] = [
+        {"text": w["word"], "startMs": int(w["start"] * 1000), "endMs": int(w["end"] * 1000)}
+        for w in words
+    ]
 
     return result

@@ -12,7 +12,7 @@ from .api_client import get_client
 from .config import VIDEO_WIDTH, VIDEO_HEIGHT, get_gemini_key, run_cmd
 from .fallback import FallbackChain
 from .log import log
-from .retry import with_retry
+from .retry import with_retry, NoRetryError
 
 
 @with_retry(max_retries=3, base_delay=2.0)
@@ -73,7 +73,7 @@ def _generate_image_gemini(prompt: str, output_path: Path, api_key: str):
             log(f"Model {model} failed ({r.status_code}): {detail} — trying next")
         except Exception as e:
             log(f"Model {model} error: {e} — trying next")
-    raise RuntimeError("All Gemini image models failed")
+    raise NoRetryError("All Gemini image models failed (credits depleted)")
 
 
 def _load_custom_footage(topic: str, niche: str, output_path: Path, i: int) -> bool:
@@ -183,6 +183,30 @@ def _get_pexels_frame(topic: str, niche: str, output_path: Path, i: int) -> bool
         return False
 
 
+def _get_pollinations_frame(prompt: str, output_path: Path) -> bool:
+    """Generate image via Pollinations.ai — completely free, no API key needed.
+
+    Returns True if successful, False otherwise.
+    """
+    try:
+        import urllib.parse
+        encoded = urllib.parse.quote(prompt[:500])
+        url = f"https://image.pollinations.ai/prompt/{encoded}?width={VIDEO_WIDTH}&height={VIDEO_HEIGHT}&nologo=true&model=flux"
+        r = requests.get(url, timeout=60)
+        if r.status_code == 200 and r.headers.get("content-type", "").startswith("image/"):
+            output_path.write_bytes(r.content)
+            # Resize to exact dimensions
+            img = Image.open(output_path).convert("RGB")
+            img = img.resize((VIDEO_WIDTH, VIDEO_HEIGHT), Image.LANCZOS)
+            img.save(output_path)
+            return True
+        log(f"[DEGRADED] Pollinations returned {r.status_code}")
+        return False
+    except Exception as e:
+        log(f"Pollinations frame failed: {e}")
+        return False
+
+
 def _fallback_frame(i: int, out_dir: Path) -> Path:
     """Solid colour fallback frame if Gemini fails."""
     colors = [(20, 20, 60), (40, 10, 40), (10, 30, 50)]
@@ -193,9 +217,9 @@ def _fallback_frame(i: int, out_dir: Path) -> Path:
 
 
 def generate_broll(prompts: list, out_dir: Path, topic: str = "", niche: str = "") -> list[Path]:
-    """Generate 3 b-roll frames: custom footage → Gemini → Pexels → solid color fallback."""
+    """Generate b-roll frames: custom → Pollinations (primary free) → Pexels → Gemini → solid color."""
+    import time
     api_key = get_gemini_key()
-    frames = []
 
     def _gemini_and_resize(prompt: str, out_path: Path) -> Path:
         _generate_image_gemini(prompt, out_path, api_key)
@@ -212,8 +236,10 @@ def generate_broll(prompts: list, out_dir: Path, topic: str = "", niche: str = "
         return out_path
 
     def _fetch_frame(i: int, prompt: str) -> tuple[int, Path]:
+        # Stagger requests to avoid Pollinations rate limits (3s between each)
+        time.sleep(i * 3)
         out_path = out_dir / f"broll_{i}.png"
-        log(f"Generating b-roll frame {i+1}/3...")
+        log(f"Generating b-roll frame {i+1}/{len(prompts[:3])}...")
 
         def _try_custom():
             if not (topic and niche):
@@ -223,6 +249,11 @@ def generate_broll(prompts: list, out_dir: Path, topic: str = "", niche: str = "
                 return out_path
             raise RuntimeError("custom footage not found")
 
+        def _try_pollinations():
+            if _get_pollinations_frame(prompt, out_path):
+                return out_path
+            raise RuntimeError("Pollinations returned no frame")
+
         def _try_pexels():
             if not (topic and niche):
                 raise RuntimeError("no topic/niche for Pexels")
@@ -230,17 +261,21 @@ def generate_broll(prompts: list, out_dir: Path, topic: str = "", niche: str = "
                 return out_path
             raise RuntimeError("Pexels returned no frames")
 
+        def _try_gemini():
+            return _gemini_and_resize(prompt, out_path)
+
         frame = (
-            FallbackChain(f"broll_{i}")
+            FallbackChain(f"broll_{i}", degraded_after=1)
             .add("custom", _try_custom)
-            .add("gemini", lambda: _gemini_and_resize(prompt, out_path))
+            .add("pollinations", _try_pollinations)
             .add("pexels", _try_pexels)
+            .add("gemini", _try_gemini)
             .add("solid_color", lambda: _fallback_frame(i, out_dir))
             .execute()
         )
         return i, frame
 
-    # Fetch all frames in parallel — each is an independent network call.
+    # Run with staggered starts — Pollinations needs breathing room between requests.
     results: dict[int, Path] = {}
     with ThreadPoolExecutor(max_workers=3) as pool:
         futures = {

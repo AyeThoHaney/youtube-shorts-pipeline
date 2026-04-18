@@ -71,6 +71,7 @@ visuals:
   prompt_suffix: "gaming aesthetic, dramatic lighting, high contrast, cinematic, vibrant colors, 4K quality"
 
 voice:
+  engine: elevenlabs
   pace: "fast, approximately 170 words per minute, slightly breathless energy"
   energy: "high energy, excited but genuine, not forced hype"
   style: "think TheScore Esports narrator meets Dunkey's pacing"

@@ -6,6 +6,10 @@ import time
 from .log import get_logger
 
 
+class NoRetryError(Exception):
+    """Raise this to skip all retries immediately (e.g. 429 credit exhaustion)."""
+
+
 def with_retry(max_retries: int = 3, base_delay: float = 2.0):
     """Decorator: retry with exponential backoff on exception.
 
@@ -19,6 +23,8 @@ def with_retry(max_retries: int = 3, base_delay: float = 2.0):
             for attempt in range(max_retries + 1):
                 try:
                     return func(*args, **kwargs)
+                except NoRetryError:
+                    raise
                 except Exception as e:
                     last_exc = e
                     if attempt < max_retries:

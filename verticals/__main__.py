@@ -75,7 +75,8 @@ async def _async_produce(args):
     work_dir.mkdir(exist_ok=True)
 
     force = getattr(args, "force", False)
-    tts_provider = getattr(args, "voice", None)
+    # Resolve TTS provider: CLI arg > niche engine > auto-detect
+    tts_provider = getattr(args, "voice", None) or profile.get("voice", {}).get("engine")
     script = getattr(args, "script", None) or (
         draft.get("script_hi") if lang == "hi" else draft.get("script")
     )
@@ -93,7 +94,9 @@ async def _async_produce(args):
                 "broll",
                 lambda: generate_broll(
                     draft.get("broll_prompts", ["Cinematic landscape"] * 3),
-                    work_dir, topic=draft.get("topic", ""), niche=niche_name,
+                    work_dir,
+                    topic=draft.get("topic") or draft.get("youtube_title", ""),
+                    niche=niche_name,
                 ),
                 "frames",
                 deserialize=_Path,
@@ -140,6 +143,9 @@ async def _async_produce(args):
                 ass_path=captions_result.get("ass_path"),
                 music_path=music_result.get("track_path"),
                 duck_filter=music_result.get("duck_filter"),
+                remotion_title=draft.get("youtube_title", ""),
+                remotion_niche=niche_name,
+                remotion_words=captions_result.get("remotion_words"),
             ),
             "video_path",
             deserialize=_Path,
@@ -226,6 +232,11 @@ def cmd_run(args):
         voice = getattr(args, "voice", None)
 
     video_path = cmd_produce(ProduceArgs())
+
+    if getattr(args, "no_upload", False):
+        print(f"\n  Done! Video saved locally: {video_path}")
+        print("  (Upload skipped — run `python -m verticals upload --draft ...` when ready)")
+        return
 
     class UploadArgs:
         draft = str(draft_path)
@@ -336,6 +347,7 @@ def main():
     p_run.add_argument("--voice", default=None, help="TTS: edge, elevenlabs, say")
     p_run.add_argument("--lang", default="en", choices=["en", "hi", "es", "pt", "de", "fr", "ja", "ko"])
     p_run.add_argument("--dry-run", action="store_true")
+    p_run.add_argument("--no-upload", action="store_true", help="Skip YouTube upload — save locally only")
     p_run.add_argument("--context", default="")
     p_run.add_argument("--discover", action="store_true")
     p_run.add_argument("--auto-pick", action="store_true")

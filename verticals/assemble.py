@@ -3,9 +3,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .broll import animate_frame
 from .config import MEDIA_DIR, VIDEO_WIDTH, VIDEO_HEIGHT, run_cmd
 from .log import log
+from .remotion import render_intro, remotion_available
 
 
 def _has_libass() -> bool:
@@ -34,8 +34,15 @@ def assemble_video(
     ass_path: str | None = None,
     music_path: str | None = None,
     duck_filter: str | None = None,
+    remotion_title: str | None = None,
+    remotion_niche: str = "AI",
+    remotion_words: list[dict] | None = None,
 ) -> Path:
-    """Assemble final video from frames, voiceover, captions, and music."""
+    """Assemble final video from frames, voiceover, captions, and music.
+
+    If remotion_title is provided and Remotion is installed, a 2-second branded
+    intro is rendered and prepended to the final video.
+    """
     log("Assembling video...")
     duration = get_audio_duration(voiceover)
     per_frame = duration / len(frames)
@@ -44,18 +51,30 @@ def assemble_video(
     # Create video from frames: extend each with black padding to match duration
     merged_video = out_dir / "merged_video.mp4"
 
-    # Create individual video clips from each frame (hold for per_frame duration)
+    # Create individual video clips — real video (Veo) or looped image (Ken Burns)
     video_clips = []
     for i, frame in enumerate(frames):
         clip_path = out_dir / f"clip_{i}.mp4"
-        run_cmd([
-            "ffmpeg", "-loop", "1", "-i", str(frame),
-            "-c:v", "libx264", "-preset", "fast", "-crf", "23",
-            "-pix_fmt", "yuv420p",
-            "-vf", f"scale={VIDEO_WIDTH}:{VIDEO_HEIGHT}:force_original_aspect_ratio=decrease,pad={VIDEO_WIDTH}:{VIDEO_HEIGHT}:(ow-iw)/2:(oh-ih)/2",
-            "-t", str(per_frame + 0.1), "-y",
-            str(clip_path), "-loglevel", "quiet",
-        ])
+        if frame.suffix.lower() == ".mp4":
+            # Real video clip from Veo — loop/trim to fill per_frame duration
+            run_cmd([
+                "ffmpeg", "-stream_loop", "-1", "-i", str(frame),
+                "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+                "-pix_fmt", "yuv420p",
+                "-vf", f"scale={VIDEO_WIDTH}:{VIDEO_HEIGHT}:force_original_aspect_ratio=decrease,pad={VIDEO_WIDTH}:{VIDEO_HEIGHT}:(ow-iw)/2:(oh-ih)/2",
+                "-t", str(per_frame + 0.1), "-an", "-y",
+                str(clip_path), "-loglevel", "quiet",
+            ])
+        else:
+            # Static image — loop and scale to fill duration
+            run_cmd([
+                "ffmpeg", "-loop", "1", "-i", str(frame),
+                "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+                "-pix_fmt", "yuv420p",
+                "-vf", f"scale={VIDEO_WIDTH}:{VIDEO_HEIGHT}:force_original_aspect_ratio=decrease,pad={VIDEO_WIDTH}:{VIDEO_HEIGHT}:(ow-iw)/2:(oh-ih)/2",
+                "-t", str(per_frame + 0.1), "-y",
+                str(clip_path), "-loglevel", "quiet",
+            ])
         video_clips.append(clip_path)
 
     # Concatenate all video clips
@@ -125,4 +144,52 @@ def assemble_video(
 
     run_cmd(cmd)
     log(f"Video assembled: {out_path}")
-    return out_path
+
+    # Overlay KineticCaption (Remotion word-by-word captions) — replaces burned-in ASS
+    current_path = out_path
+    if remotion_words and remotion_available():
+        from .remotion import render_caption_overlay
+        caption_overlay = render_caption_overlay(
+            words=remotion_words,
+            duration_seconds=duration,
+            out_dir=out_dir,
+        )
+        if caption_overlay and caption_overlay.exists():
+            captioned_path = out_dir / f"captioned_{job_id}_{lang}.mp4"
+            run_cmd([
+                "ffmpeg", "-i", str(current_path), "-i", str(caption_overlay),
+                "-filter_complex", "[0:v][1:v]overlay=0:0[v]",
+                "-map", "[v]", "-map", "0:a",
+                "-c:v", "libx264", "-c:a", "copy", "-y",
+                str(captioned_path), "-loglevel", "quiet",
+            ])
+            log(f"[remotion] KineticCaption overlay applied → {captioned_path}")
+            current_path = captioned_path
+        else:
+            log("[DEGRADED] KineticCaption render failed — falling back to ASS burned-in captions")
+
+    # Prepend Remotion intro if requested and available
+    if remotion_title and remotion_available():
+        intro_clip = render_intro(
+            title=remotion_title,
+            out_dir=out_dir,
+            niche=remotion_niche,
+        )
+        if intro_clip and intro_clip.exists():
+            final_path = MEDIA_DIR / f"verticals_{job_id}_{lang}_final.mp4"
+            # Intro has no audio — use filter_complex concat: join video streams,
+            # pass audio only from the main clip (stream index 1).
+            run_cmd([
+                "ffmpeg",
+                "-i", str(intro_clip),
+                "-i", str(current_path),
+                "-filter_complex",
+                "[0:v][1:v]concat=n=2:v=1:a=0[v];[1:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo[a]",
+                "-map", "[v]", "-map", "[a]",
+                "-c:v", "libx264", "-preset", "fast", "-c:a", "aac", "-y",
+                str(final_path), "-loglevel", "quiet",
+            ])
+            log(f"[remotion] intro prepended → {final_path}")
+            return final_path
+
+    return current_path
