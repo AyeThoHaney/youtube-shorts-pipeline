@@ -56,6 +56,12 @@ class TopicEngine:
         except ImportError:
             pass
 
+        try:
+            from .vault import VaultSource
+            source_map["vault"] = VaultSource
+        except ImportError:
+            pass
+
         for name, cls in source_map.items():
             src_cfg = dict(source_config.get(name, {}))  # shallow copy so we can mutate
 
@@ -67,9 +73,12 @@ class TopicEngine:
                         src_cfg["subreddits"] = niche_subs
                 if name == "newsapi":
                     src_cfg.setdefault("niche", self._niche)
+                if name == "google_trends":
+                    src_cfg.setdefault("niche", self._niche)
+                    src_cfg.setdefault("geo", "US")
 
             # NewsAPI enabled if key is present (checked by is_available); others default on/off
-            default_enabled = name in ("reddit", "rss", "google_trends", "newsapi", "pexels")
+            default_enabled = name in ("reddit", "rss", "google_trends", "newsapi", "pexels", "vault")
             if src_cfg.get("enabled", default_enabled):
                 try:
                     self._sources.append(cls(src_cfg))
@@ -80,19 +89,29 @@ class TopicEngine:
         """Fetch from all sources in parallel, deduplicate, rank."""
         all_topics = []
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
+        from .google_trends import GoogleTrendsSource
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
             futures = {
-                pool.submit(src.fetch_topics, limit): src
+                pool.submit(src.fetch_topics, limit): src.name
                 for src in self._sources if src.is_available
             }
+
+            # Also run Google Trends Rising in parallel (higher-signal breakout topics)
+            gt_rising = next(
+                (s for s in self._sources if isinstance(s, GoogleTrendsSource)), None
+            )
+            if gt_rising and gt_rising.is_available:
+                futures[pool.submit(gt_rising.fetch_rising_topics, limit)] = "google_trends_rising"
+
             for future in concurrent.futures.as_completed(futures):
-                src = futures[future]
+                src_name = futures[future]
                 try:
-                    topics = future.result(timeout=15)
+                    topics = future.result(timeout=30)
                     all_topics.extend(topics)
-                    log(f"{src.name}: found {len(topics)} topics")
+                    log(f"{src_name}: found {len(topics)} topics")
                 except Exception as e:
-                    log(f"{src.name}: failed — {e}")
+                    log(f"{src_name}: failed — {e}")
 
         # Deduplicate by fuzzy title matching
         seen = set()

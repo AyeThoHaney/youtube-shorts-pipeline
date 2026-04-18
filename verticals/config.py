@@ -210,9 +210,12 @@ def get_anthropic_client():
 def get_claude_backend() -> str:
     """Determine which Claude backend to use.
 
-    Returns: "api" if ANTHROPIC_API_KEY is set, "cli" if claude CLI is available.
+    Prefers CLI (Claude Code auth, no API credits) over API key.
+    Returns: "cli" if claude CLI is available, "api" as fallback.
     Raises RuntimeError if neither is available.
     """
+    if has_claude_cli():
+        return "cli"
     if get_anthropic_key():
         return "api"
     if has_claude_cli() and _has_claude_max_credentials():

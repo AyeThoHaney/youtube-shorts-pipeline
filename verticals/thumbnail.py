@@ -15,26 +15,27 @@ THUMB_HEIGHT = 720
 
 
 def _generate_thumb_image(prompt: str, output_path: Path, api_key: str):
-    """Generate a 16:9 thumbnail via Gemini native image generation."""
+    """Generate a 16:9 thumbnail via Imagen 4 fast."""
     url = (
         "https://generativelanguage.googleapis.com/v1beta"
-        "/models/gemini-2.0-flash-exp-image-generation:generateContent"
+        "/models/imagen-4.0-fast-generate-001:predict"
     )
     body = {
-        "contents": [{"parts": [{"text": f"Generate a 16:9 landscape image: {prompt}"}]}],
-        "generationConfig": {"responseModalities": ["IMAGE", "TEXT"]},
+        "instances": [{"prompt": f"16:9 landscape cinematic thumbnail — {prompt}"}],
+        "parameters": {"sampleCount": 1, "aspectRatio": "16:9"},
     }
     data = get_client().post_json(
         url, body,
         headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
         timeout=90,
     )
-    for part in data.get("candidates", [{}])[0].get("content", {}).get("parts", []):
-        if "inlineData" in part:
-            img_b64 = part["inlineData"]["data"]
+    predictions = data.get("predictions", [])
+    if predictions:
+        img_b64 = predictions[0].get("bytesBase64Encoded", "")
+        if img_b64:
             output_path.write_bytes(base64.b64decode(img_b64))
             return
-    raise RuntimeError("No image in Gemini response")
+    raise RuntimeError("No image in Imagen response")
 
 
 def _overlay_title(image_path: Path, title: str, output_path: Path):
