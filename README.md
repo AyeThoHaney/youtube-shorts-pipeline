@@ -57,6 +57,19 @@ Other highlights: multi provider LLM support (Claude, Gemini, GPT, Ollama local)
 
 **Upload** — Publishes to YouTube (private by default) with title, description, tags, SRT captions, and AI generated thumbnail. TikTok and Instagram export coming in v3.1.
 
+## Cronduit Branding
+
+All videos produced by Verticals are automatically branded with the **Cronduit** visual identity. This includes:
+
+- **2-second animated intro** — Dark background (#111111) with teal accent (#00E5C0), featuring your video title
+- **Kinetic captions** — Word-by-word animated captions with teal highlighting throughout the video
+- **Brand colors** — Consistent use of Cronduit color palette across all visual elements
+- **Professional thumbnails** — Gemini-generated with Cronduit-branded text overlays
+
+**Customize branding:** See [`BRAND_INTEGRATION.md`](BRAND_INTEGRATION.md) for color palettes, custom themes, and override options.
+
+**Brand guidelines:** Read [`~/tools/BRAND.md`](../../tools/BRAND.md) for the complete brand identity and visual direction.
+
 ## Niche Intelligence
 
 This is what makes Verticals different from every other AI video tool.

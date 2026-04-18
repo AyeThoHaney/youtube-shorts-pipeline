@@ -6,6 +6,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 from .api_client import get_client
+from .brand import RGB_GRAYSCALE_LIGHT, RGB_PRIMARY_TEAL
 from .config import get_gemini_key, THUMB_TEXT_PADDING_SIDE, THUMB_TEXT_PADDING_BOTTOM
 from .log import log
 from .retry import with_retry
@@ -79,9 +80,9 @@ def _overlay_title(image_path: Path, title: str, output_path: Path):
         text_block, fill=(0, 0, 0), font=font, align="center",
     )
 
-    # Main text
+    # Main text — Cronduit brand light color with teal accent available
     draw.multiline_text(
-        (x, y), text_block, fill=(255, 255, 255), font=font, align="center",
+        (x, y), text_block, fill=RGB_GRAYSCALE_LIGHT, font=font, align="center",
     )
 
     img.save(output_path)

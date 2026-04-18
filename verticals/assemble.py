@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .brand import COLOR_BG_DARK, COLOR_PRIMARY_TEAL
 from .config import MEDIA_DIR, VIDEO_WIDTH, VIDEO_HEIGHT, run_cmd
 from .log import log
 from .remotion import render_intro, remotion_available
@@ -174,6 +175,8 @@ def assemble_video(
             title=remotion_title,
             out_dir=out_dir,
             niche=remotion_niche,
+            accent_color=COLOR_PRIMARY_TEAL,
+            bg_color=COLOR_BG_DARK,
         )
         if intro_clip and intro_clip.exists():
             final_path = MEDIA_DIR / f"verticals_{job_id}_{lang}_final.mp4"
